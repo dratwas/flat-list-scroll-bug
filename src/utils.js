@@ -7,7 +7,7 @@ export const getRandomInt = (min, max) => {
 export const generateUniqueKey = () =>
   `_${Math.random().toString(36).substr(2, 9)}`;
 
-let idx = 525;
+let idx = 0;
 
 // Mocks the api call to query 'n' number of messages.
 export const queryMoreMessages = n => {
@@ -17,8 +17,7 @@ export const queryMoreMessages = n => {
     for (let i = 0; i < n; i++) {
       const messageText = testMessages[getRandomInt(0, testMessages.length)];
       newMessages.push({
-        id: generateUniqueKey() + '_' + idx,
-        idx: idx--,
+        id: generateUniqueKey() + '_' + idx++,
         text: messageText,
         isMyMessage: Boolean(getRandomInt(0, 2)), // Randomly assign true or false.
       });

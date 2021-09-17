@@ -1,34 +1,128 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useState, useCallback, useRef, useMemo} from 'react';
 import {
   SafeAreaView,
   StyleSheet,
   Text,
   View,
-  FlatList,
   TouchableOpacity,
-  // ScrollView,
 } from 'react-native';
+import throttle from 'lodash.throttle';
+import {FlatList} from 'react-native-bidirectional-infinite-scroll';
 
 import {MessageBubble} from './MessageBubble';
-import {Message, queryMoreMessages} from './utils';
+import {queryMoreMessages} from './utils';
+
+const renderIt = ({item}) => <MessageBubble item={item} />;
+const keyExtract = item => item.id;
+
+const split = arr => {
+  if (arr.length > 50) {
+    return [arr.slice(0, 50), arr.slice(50, arr.length)];
+  }
+  return arr;
+};
 
 const App = () => {
+  const scrollRef = useRef();
+  const batcher = useRef([]);
+  const batcherBottom = useRef([]);
+
   const [messages, setMessages] = useState([]);
   useEffect(() => {
     const initChat = async () => {
-      const initialMessages = await queryMoreMessages(20);
-      if (!initialMessages) return;
+      const initialMessages = await queryMoreMessages(100);
+      if (!initialMessages) {
+        return;
+      }
 
-      setMessages(initialMessages);
+      setMessages(initialMessages.reverse());
     };
 
     initChat();
   }, []);
 
+  const onScrollFailed = useCallback(info => {
+    const wait = new Promise(resolve => setTimeout(resolve, 50));
+    wait.then(() => {
+      scrollRef.current?.scrollToIndex({
+        index: info.index,
+        animated: true,
+      });
+    });
+  }, []);
+
+  const onStartReached = useCallback(async () => {
+    const fun = async () => {
+      if (batcherBottom.current.length > 0) {
+        setMessages(m => {
+          return [...batcherBottom.current.reverse(), ...m];
+        });
+        batcherBottom.current = [];
+      } else {
+        const newMessages = await queryMoreMessages(100);
+        if (newMessages.length > 50) {
+          const [toRender, toBatch] = split(newMessages);
+          batcherBottom.current = [
+            ...toBatch.reverse(),
+            ...batcherBottom.current,
+          ];
+          setMessages(m => {
+            return [...toRender.reverse(), ...m];
+          });
+        } else {
+          setMessages(m => {
+            return [...newMessages.reverse(), ...m];
+          });
+        }
+      }
+    };
+    return fun();
+  }, [setMessages]);
+
+  const onReachStartDebounced = useMemo(() => {
+    return throttle(onStartReached, 1000);
+  }, [onStartReached]);
+
+  const onStart = useCallback(async () => {
+    onReachStartDebounced();
+  }, [onReachStartDebounced]);
+
+  const onEndReached = useCallback(async () => {
+    const fun = async () => {
+      if (batcher.current.length > 0) {
+        setMessages(m => {
+          return [...m, ...batcher.current.reverse()];
+        });
+        batcher.current = [];
+      } else {
+        const newMessages = await queryMoreMessages(100);
+        if (newMessages.length > 50) {
+          const [toRender, toBatch] = split(newMessages);
+          batcher.current = [...batcher.current, ...toBatch];
+          setMessages(m => {
+            return [...m, ...toRender.reverse()];
+          });
+        } else {
+          setMessages(m => {
+            return [...m, ...newMessages.reverse()];
+          });
+        }
+      }
+    };
+    return fun();
+  }, [setMessages]);
+
+  const onReachEndDebounced = useMemo(() => {
+    return throttle(onEndReached, 1500);
+  }, [onEndReached]);
+
+  const onEnd = useCallback(async () => {
+    onReachEndDebounced();
+  }, [onReachEndDebounced]);
+
   if (!messages.length) {
     return null;
   }
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
@@ -37,36 +131,35 @@ const App = () => {
           onPress={async () => {
             const newMessages = await queryMoreMessages(10);
             setMessages(m => {
-              return (
-                newMessages
-                  // .map((ms) => ({ ...ms, text: ms.text.slice(0, 20) }))
-                  .concat(m)
-              );
+              return [...newMessages.reverse(), ...m];
             });
           }}>
-          <Text>Load in the opposite direction</Text>
+          <Text>Simulate new 5 messages</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={async () => {
+            const newMessages = await queryMoreMessages(1);
+            setMessages(m => {
+              return [...newMessages.reverse(), ...m];
+            });
+          }}>
+          <Text>Simulate new message</Text>
         </TouchableOpacity>
       </View>
       <FlatList
+        inverted
+        ref={scrollRef}
+        showDefaultLoadingIndicators={true}
         data={messages}
-        maintainVisibleContentPosition={{
-          autoscrollToTopThreshold: undefined,
-          minIndexForVisible: 1,
-        }}
-        renderItem={args => <MessageBubble {...args} />}
-        keyExtractor={item => item.id}
+        initialScrollIndex={messages.length / 2}
+        onScrollToIndexFailed={onScrollFailed}
+        renderItem={renderIt}
+        keyExtractor={keyExtract}
+        maxToRenderPerBatch={100}
+        enableAutoscrollToTop={true}
+        onStartReached={onStart}
+        onEndReached={onEnd}
       />
-
-      {/* <ScrollView
-        maintainVisibleContentPosition={{
-          autoscrollToTopThreshold: undefined,
-          minIndexForVisible: 1,
-        }}
-      >
-        {messages.map((m, i) => {
-          return <MessageBubble item={m} index={i} />;
-        })}
-      </ScrollView> */}
     </SafeAreaView>
   );
 };

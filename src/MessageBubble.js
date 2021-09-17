@@ -1,33 +1,24 @@
-import React, {useEffect} from 'react';
+import React from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 
-export const MessageBubble = ({item}) => {
-  useEffect(() => {
-    console.log('123!@#', 'MessageBubble mount', item.id);
-
-    return () => {
-      console.log('123!@#', 'MessageBubble unmount', item.id);
-    };
-  }, [item.id]);
-
-  if (item.isMyMessage) {
+export const MessageBubble = React.memo(
+  ({item}) => {
     return (
       <View
-        key={`${item.id}`}
-        style={[styles.messageBubble, styles.myMessageBubble]}>
-        <Text style={styles.myMessageText}>{item.text}</Text>
+        style={[
+          styles.messageBubble,
+          item.isMyMessage && styles.myMessageBubble,
+        ]}>
+        <Text
+          style={item.isMyMessage ? styles.myMessageText : styles.messageText}>
+          {item.text}
+        </Text>
         <Text>{item.id}</Text>
       </View>
     );
-  }
-
-  return (
-    <View key={`${item.id}`} style={styles.messageBubble}>
-      <Text style={styles.messageText}>{item.text}</Text>
-      <Text>{item.id}</Text>
-    </View>
-  );
-};
+  },
+  (prevProps, nextProps) => prevProps.item.id === nextProps.item.id,
+);
 
 const styles = StyleSheet.create({
   messageBubble: {
